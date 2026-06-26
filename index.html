@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Backtest — VTI / VGT / SMH vs SPY</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #141720;
+    --card: #1a1f2e;
+    --border: #252b3d;
+    --accent: #4f9eff;
+    --accent2: #ff6b6b;
+    --green: #00e5a0;
+    --green-soft: rgba(0,229,160,0.12);
+    --red-soft: rgba(255,107,107,0.12);
+    --text: #e8eaf0;
+    --muted: #8892a4;
+    --blend-color: #4f9eff;
+    --spy-color: #ff6b6b;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'Inter',system-ui,sans-serif; min-height:100vh; }
+
+  /* HEADER */
+  header {
+    background: linear-gradient(135deg, #0d1117 0%, #161d2e 50%, #0d1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 36px 48px 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  header::before {
+    content:'';
+    position:absolute; top:-60px; right:-60px;
+    width:300px; height:300px;
+    background: radial-gradient(circle, rgba(79,158,255,0.08) 0%, transparent 70%);
+    pointer-events:none;
+  }
+  .header-badge {
+    display:inline-flex; align-items:center; gap:6px;
+    background: rgba(79,158,255,0.12); border:1px solid rgba(79,158,255,0.25);
+    border-radius:20px; padding:4px 12px; font-size:11px; font-weight:600;
+    color:var(--accent); text-transform:uppercase; letter-spacing:0.08em;
+    margin-bottom:14px;
+  }
+  .header-badge span { width:6px; height:6px; background:var(--accent); border-radius:50%; display:inline-block; }
+  header h1 { font-size:32px; font-weight:800; letter-spacing:-0.5px; margin-bottom:8px; }
+  header h1 .tickers { color:var(--accent); }
+  header p { color:var(--muted); font-size:14px; max-width:600px; line-height:1.6; }
+
+  /* PORTFOLIO BADGE */
+  .portfolio-strip {
+    display:flex; gap:12px; flex-wrap:wrap; margin-top:20px;
+  }
+  .p-chip {
+    display:flex; align-items:center; gap:8px;
+    background:var(--card); border:1px solid var(--border);
+    border-radius:10px; padding:8px 14px; font-size:13px;
+  }
+  .p-chip .dot { width:8px; height:8px; border-radius:50%; }
+  .p-chip .label { color:var(--muted); font-size:11px; }
+  .p-chip .val { font-weight:700; font-size:13px; }
+
+  /* NAV TABS */
+  .tab-nav {
+    display:flex; gap:0; background:var(--surface); border-bottom:1px solid var(--border);
+    padding:0 48px; position:sticky; top:0; z-index:100;
+  }
+  .tab-btn {
+    padding:16px 24px; font-size:13px; font-weight:600; cursor:pointer;
+    border:none; background:transparent; color:var(--muted); border-bottom:3px solid transparent;
+    transition:all 0.2s; white-space:nowrap;
+  }
+  .tab-btn:hover { color:var(--text); }
+  .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+
+  /* SECTIONS */
+  .section { display:none; padding:40px 48px; max-width:1400px; margin:0 auto; }
+  .section.active { display:block; }
+
+  /* KPI ROW */
+  .kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:32px; }
+  .kpi-card {
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:22px 24px; position:relative; overflow:hidden;
+  }
+  .kpi-card::after {
+    content:''; position:absolute; top:0; left:0; right:0; height:3px;
+  }
+  .kpi-card.blend::after { background:linear-gradient(90deg, var(--blend-color), #7db8ff); }
+  .kpi-card.spy-k::after { background:linear-gradient(90deg, var(--spy-color), #ff9999); }
+  .kpi-card.alpha-k::after { background:linear-gradient(90deg, var(--green), #00b894); }
+  .kpi-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; }
+  .kpi-val { font-size:28px; font-weight:800; letter-spacing:-0.5px; }
+  .kpi-val.up { color:var(--green); }
+  .kpi-val.up-blue { color:var(--accent); }
+  .kpi-sub { font-size:12px; color:var(--muted); margin-top:6px; }
+  .kpi-sub .badge-up { color:var(--green); font-weight:600; }
+  .kpi-sub .badge-dn { color:var(--spy-color); font-weight:600; }
+
+  /* CHART WRAPPER */
+  .chart-wrap {
+    background:var(--card); border:1px solid var(--border); border-radius:16px;
+    padding:28px; margin-bottom:24px;
+  }
+  .chart-title { font-size:16px; font-weight:700; margin-bottom:4px; }
+  .chart-sub { font-size:12px; color:var(--muted); margin-bottom:24px; }
+  .chart-container { position:relative; height:360px; }
+
+  /* LEGEND */
+  .legend { display:flex; gap:20px; align-items:center; margin-bottom:16px; }
+  .leg-item { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:600; }
+  .leg-dot { width:10px; height:10px; border-radius:50%; }
+  .leg-line { width:28px; height:3px; border-radius:2px; }
+
+  /* BEAR SECTION */
+  .bear-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:20px; margin-bottom:24px; }
+  .bear-card {
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:0; overflow:hidden; cursor:pointer; transition:border-color 0.2s;
+  }
+  .bear-card:hover { border-color: var(--accent); }
+  .bear-card.active { border-color: var(--accent); }
+  .bear-head {
+    padding:16px 20px; background:rgba(79,158,255,0.04);
+    border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .bear-name { font-weight:700; font-size:14px; }
+  .bear-dd {
+    font-size:12px; font-weight:700; color:var(--spy-color);
+    background:var(--red-soft); padding:3px 10px; border-radius:20px;
+  }
+  .bear-stats { padding:16px 20px; }
+  .bear-stat-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .bear-stat-label { font-size:11px; color:var(--muted); font-weight:500; }
+  .bear-stat-val { font-size:13px; font-weight:700; }
+  .bear-stat-val.blend { color:var(--blend-color); }
+  .bear-stat-val.spy { color:var(--spy-color); }
+  .bear-stat-val.green { color:var(--green); }
+  .bear-mini-chart { height:80px; padding:0 20px 16px; }
+  .winner-badge {
+    display:inline-flex; align-items:center; gap:5px;
+    background:var(--green-soft); color:var(--green);
+    border:1px solid rgba(0,229,160,0.2);
+    border-radius:20px; padding:3px 10px; font-size:11px; font-weight:700;
+  }
+
+  /* BEAR DETAIL */
+  .bear-detail { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:28px; }
+  .bear-detail-title { font-size:18px; font-weight:800; margin-bottom:4px; }
+  .bear-detail-sub { font-size:12px; color:var(--muted); margin-bottom:24px; }
+  .bear-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
+  .bs-card {
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px;
+  }
+  .bs-label { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px; }
+  .bs-val { font-size:20px; font-weight:800; }
+
+  /* COMPARISON TABLE */
+  .comparison-table { width:100%; border-collapse:collapse; margin-top:24px; }
+  .comparison-table thead tr { background:rgba(79,158,255,0.07); }
+  .comparison-table th {
+    text-align:left; padding:12px 16px; font-size:11px; font-weight:700;
+    color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;
+    border-bottom:1px solid var(--border);
+  }
+  .comparison-table td {
+    padding:14px 16px; font-size:13px; border-bottom:1px solid rgba(37,43,61,0.6);
+  }
+  .comparison-table tr:last-child td { border-bottom:none; }
+  .comparison-table tr:hover { background:rgba(255,255,255,0.02); }
+  .td-blend { color:var(--blend-color); font-weight:700; }
+  .td-spy { color:var(--spy-color); font-weight:700; }
+  .td-green { color:var(--green); font-weight:700; }
+  .td-winner { display:inline-flex; align-items:center; gap:4px; }
+  .winner-chip {
+    font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px;
+  }
+  .winner-chip.blend { background:rgba(79,158,255,0.15); color:var(--accent); }
+  .winner-chip.spy { background:rgba(255,107,107,0.15); color:var(--spy-color); }
+
+  /* SECTION INTRO */
+  .section-intro {
+    display:flex; align-items:center; gap:12px; margin-bottom:28px;
+    padding:18px 22px; background:rgba(79,158,255,0.05); border:1px solid rgba(79,158,255,0.15);
+    border-radius:12px;
+  }
+  .section-intro .icon { font-size:22px; }
+  .section-intro .text { font-size:13px; color:var(--muted); line-height:1.6; }
+  .section-intro strong { color:var(--text); }
+
+  /* FOOTNOTE */
+  .footnote { font-size:11px; color:var(--muted); text-align:center; padding:24px 0 8px; opacity:0.7; }
+
+  @media(max-width:900px) {
+    header { padding:24px 24px 20px; }
+    header h1 { font-size:22px; }
+    .tab-nav { padding:0 16px; }
+    .section { padding:24px 16px; }
+    .kpi-row { grid-template-columns:repeat(2,1fr); }
+    .bear-grid { grid-template-columns:1fr; }
+    .bear-summary-grid { grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-badge"><span></span> Backtest Dashboard — Price Return, No Dividends</div>
+  <h1>Portfolio Blend <span class="tickers">VTI · VGT · SMH</span> vs SPY</h1>
+  <p>Buy-and-hold backtest across three time horizons. $10,000 initial investment in both strategies. Monthly closing prices, no dividends reinvested.</p>
+  <div class="portfolio-strip">
+    <div class="p-chip">
+      <div class="dot" style="background:#4f9eff"></div>
+      <div>
+        <div class="label">VTI — Total Market</div>
+        <div class="val">$5,500 · 55%</div>
+      </div>
+    </div>
+    <div class="p-chip">
+      <div class="dot" style="background:#7db8ff"></div>
+      <div>
+        <div class="label">VGT — Info Tech</div>
+        <div class="val">$2,500 · 25%</div>
+      </div>
+    </div>
+    <div class="p-chip">
+      <div class="dot" style="background:#a0c8ff"></div>
+      <div>
+        <div class="label">SMH — Semiconductors</div>
+        <div class="val">$2,000 · 20%</div>
+      </div>
+    </div>
+    <div class="p-chip" style="border-color:rgba(255,107,107,0.3)">
+      <div class="dot" style="background:#ff6b6b"></div>
+      <div>
+        <div class="label">SPY — S&P 500</div>
+        <div class="val">$10,000 benchmark</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('t10y')">10-Year Backtest</button>
+  <button class="tab-btn" onclick="switchTab('t15y')">15-Year Backtest</button>
+  <button class="tab-btn" onclick="switchTab('tbear')">5 Bear Markets</button>
+</nav>
+
+<!-- ====================================================== -->
+<!--  10-YEAR SECTION                                        -->
+<!-- ====================================================== -->
+<div id="t10y" class="section active">
+  <div class="section-intro">
+    <div class="icon">📅</div>
+    <div class="text">
+      <strong>10-Year Window: April 2016 → April 2026.</strong>
+      Both strategies started with $10,000. The blend held VTI (55%), VGT (25%), SMH (20%) — rebalanced only at inception, buy-and-hold thereafter.
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card blend">
+      <div class="kpi-label">Blend End Value</div>
+      <div class="kpi-val up-blue">$63,854</div>
+      <div class="kpi-sub">Started $10,000 &rarr; <span class="badge-up">+538.5%</span></div>
+    </div>
+    <div class="kpi-card spy-k">
+      <div class="kpi-label">SPY End Value</div>
+      <div class="kpi-val" style="color:var(--spy-color)">$31,785</div>
+      <div class="kpi-sub">Started $10,000 &rarr; <span class="badge-dn">+217.9%</span></div>
+    </div>
+    <div class="kpi-card alpha-k">
+      <div class="kpi-label">Blend Alpha (10Y)</div>
+      <div class="kpi-val up">+$32,069</div>
+      <div class="kpi-sub">+320.7 percentage points over SPY</div>
+    </div>
+    <div class="kpi-card" style="border-top:3px solid var(--border)">
+      <div class="kpi-label">Blend Win Ratio</div>
+      <div class="kpi-val up-blue">2.01×</div>
+      <div class="kpi-sub">Blend grew 2× more than SPY</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Portfolio Value — 10-Year (Apr 2016 → Apr 2026)</div>
+    <div class="chart-sub">Monthly closing prices · $10,000 starting investment · price return only</div>
+    <div class="legend">
+      <div class="leg-item"><div class="leg-line" style="background:var(--blend-color)"></div> Portfolio Blend (VTI/VGT/SMH)</div>
+      <div class="leg-item"><div class="leg-line" style="background:var(--spy-color)"></div> SPY (S&P 500)</div>
+    </div>
+    <div class="chart-container"><canvas id="chart10y"></canvas></div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Relative Performance — Blend vs SPY (10Y)</div>
+    <div class="chart-sub">Positive = Blend outperforming · Negative = SPY outperforming · Expressed in $ gap</div>
+    <div class="chart-container" style="height:200px"><canvas id="chart10y_gap"></canvas></div>
+  </div>
+
+  <p class="footnote">Data: <a href="https://perplexity.ai/finance/VTI" style="color:var(--accent)">VTI</a> · <a href="https://perplexity.ai/finance/VGT" style="color:var(--accent)">VGT</a> · <a href="https://perplexity.ai/finance/SMH" style="color:var(--accent)">SMH</a> · <a href="https://perplexity.ai/finance/SPY" style="color:var(--accent)">SPY</a> via Perplexity Finance. Monthly close, buy-and-hold. Past performance is not indicative of future results.</p>
+</div>
+
+<!-- ====================================================== -->
+<!--  15-YEAR SECTION                                        -->
+<!-- ====================================================== -->
+<div id="t15y" class="section">
+  <div class="section-intro">
+    <div class="icon">📅</div>
+    <div class="text">
+      <strong>15-Year Window: April 2011 → April 2026.</strong>
+      Both strategies started with $10,000. Includes the Euro debt crisis, zero interest rate era, COVID crash, and the 2022 rate-tightening bear market.
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card blend">
+      <div class="kpi-label">Blend End Value</div>
+      <div class="kpi-val up-blue">$94,863</div>
+      <div class="kpi-sub">Started $10,000 &rarr; <span class="badge-up">+848.6%</span></div>
+    </div>
+    <div class="kpi-card spy-k">
+      <div class="kpi-label">SPY End Value</div>
+      <div class="kpi-val" style="color:var(--spy-color)">$48,071</div>
+      <div class="kpi-sub">Started $10,000 &rarr; <span class="badge-dn">+380.7%</span></div>
+    </div>
+    <div class="kpi-card alpha-k">
+      <div class="kpi-label">Blend Alpha (15Y)</div>
+      <div class="kpi-val up">+$46,792</div>
+      <div class="kpi-sub">+467.9 percentage points over SPY</div>
+    </div>
+    <div class="kpi-card" style="border-top:3px solid var(--border)">
+      <div class="kpi-label">Blend Win Ratio</div>
+      <div class="kpi-val up-blue">1.97×</div>
+      <div class="kpi-sub">Nearly double SPY at the 15Y mark</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Portfolio Value — 15-Year (Apr 2011 → Apr 2026)</div>
+    <div class="chart-sub">Monthly closing prices · $10,000 starting investment · price return only</div>
+    <div class="legend">
+      <div class="leg-item"><div class="leg-line" style="background:var(--blend-color)"></div> Portfolio Blend (VTI/VGT/SMH)</div>
+      <div class="leg-item"><div class="leg-line" style="background:var(--spy-color)"></div> SPY (S&P 500)</div>
+    </div>
+    <div class="chart-container"><canvas id="chart15y"></canvas></div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Relative Performance — Blend vs SPY (15Y)</div>
+    <div class="chart-sub">Dollar gap between Blend and SPY portfolio values over time</div>
+    <div class="chart-container" style="height:200px"><canvas id="chart15y_gap"></canvas></div>
+  </div>
+
+  <p class="footnote">Data: <a href="https://perplexity.ai/finance/VTI" style="color:var(--accent)">VTI</a> · <a href="https://perplexity.ai/finance/VGT" style="color:var(--accent)">VGT</a> · <a href="https://perplexity.ai/finance/SMH" style="color:var(--accent)">SMH</a> · <a href="https://perplexity.ai/finance/SPY" style="color:var(--accent)">SPY</a> via Perplexity Finance. Monthly close, buy-and-hold. Past performance is not indicative of future results.</p>
+</div>
+
+<!-- ====================================================== -->
+<!--  BEAR MARKETS SECTION                                   -->
+<!-- ====================================================== -->
+<div id="tbear" class="section">
+  <div class="section-intro">
+    <div class="icon">🐻</div>
+    <div class="text">
+      <strong>Entry at SPY trough · Full exit at prior peak recovery.</strong>
+      Each scenario opens a $10,000 position in both strategies at the official SPY monthly close trough, then exits at the month SPY recovers to its prior cycle high. Click a bear market card to explore its recovery chart.
+    </div>
+  </div>
+
+  <!-- Summary Table -->
+  <div class="chart-wrap" style="margin-bottom:28px;">
+    <div class="chart-title">All 5 Bear Markets — Trough-to-Peak Summary</div>
+    <div class="chart-sub">$10,000 entry at each trough · exit at full SPY recovery to prior ATH</div>
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Bear Market</th>
+          <th>Drawdown</th>
+          <th>Trough → Recovery</th>
+          <th>Duration</th>
+          <th>Blend Return</th>
+          <th>SPY Return</th>
+          <th>Alpha</th>
+          <th>Winner</th>
+        </tr>
+      </thead>
+      <tbody id="bear-table-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Bear Cards Grid -->
+  <div class="bear-grid" id="bear-cards"></div>
+
+  <!-- Bear Detail Chart -->
+  <div class="bear-detail" id="bear-detail">
+    <div class="bear-detail-title" id="bd-title">GFC Recovery — Feb 2009 → Aug 2012</div>
+    <div class="bear-detail-sub" id="bd-sub">Click a card above to see the recovery chart for each bear market</div>
+    <div class="bear-summary-grid" id="bd-kpis"></div>
+    <div class="chart-container" style="height:320px"><canvas id="bear-chart"></canvas></div>
+  </div>
+
+  <!-- Bear Bar Chart — all 5 side by side -->
+  <div class="chart-wrap" style="margin-top:24px;">
+    <div class="chart-title">Recovery Performance — All 5 Bear Markets</div>
+    <div class="chart-sub">Blend vs SPY return (%) during each trough-to-peak recovery window</div>
+    <div class="legend">
+      <div class="leg-item"><div class="leg-dot" style="background:var(--blend-color)"></div> Blend</div>
+      <div class="leg-item"><div class="leg-dot" style="background:var(--spy-color)"></div> SPY</div>
+    </div>
+    <div class="chart-container" style="height:280px"><canvas id="bear-bar-chart"></canvas></div>
+  </div>
+
+  <p class="footnote">Data: <a href="https://perplexity.ai/finance/VTI" style="color:var(--accent)">VTI</a> · <a href="https://perplexity.ai/finance/VGT" style="color:var(--accent)">VGT</a> · <a href="https://perplexity.ai/finance/SMH" style="color:var(--accent)">SMH</a> · <a href="https://perplexity.ai/finance/SPY" style="color:var(--accent)">SPY</a> via Perplexity Finance. Monthly close, buy-and-hold, price return. Bear market trough/peak dates sourced from S&P 500 historical drawdown data. Past performance is not indicative of future results.</p>
+</div>
+
+<script>
+// ====================================================
+// DATA
+// ====================================================
+const DATA = {
+  "10y": {"dates":["2016-04","2016-05","2016-06","2016-07","2016-08","2016-09","2016-10","2016-11","2016-12","2017-01","2017-02","2017-03","2017-04","2017-05","2017-06","2017-07","2017-08","2017-09","2017-10","2017-11","2017-12","2018-01","2018-02","2018-03","2018-04","2018-05","2018-06","2018-07","2018-08","2018-09","2018-10","2018-11","2018-12","2019-01","2019-02","2019-03","2019-04","2019-05","2019-06","2019-07","2019-08","2019-09","2019-10","2019-11","2019-12","2020-01","2020-02","2020-03","2020-04","2020-05","2020-06","2020-07","2020-08","2020-09","2020-10","2020-11","2020-12","2021-01","2021-02","2021-03","2021-04","2021-05","2021-06","2021-07","2021-08","2021-09","2021-10","2021-11","2021-12","2022-01","2022-02","2022-03","2022-04","2022-05","2022-06","2022-07","2022-08","2022-09","2022-10","2022-11","2022-12","2023-01","2023-02","2023-03","2023-04","2023-05","2023-06","2023-07","2023-08","2023-09","2023-10","2023-11","2023-12","2024-01","2024-02","2024-03","2024-04","2024-05","2024-06","2024-07","2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04"],"blend":[10000.0,10398.27,10324.03,10987.32,11166.66,11334.41,11145.9,11521.88,11651.8,11995.57,12446.42,12610.18,12753.33,13204.69,12980.44,13393.5,13617.05,13948.6,14680.65,14880.45,14828.16,15831.98,15553.76,15144.82,14904.21,15768.9,15578.36,16058.01,16831.93,16709.74,15224.91,15431.03,13975.14,15217.83,16047.84,16401.44,17381.73,15735.35,17073.95,17626.91,17244.8,17574.56,18252.76,19063.36,19783.39,19855.17,18516.16,16259.42,18494.76,19639.73,20658.4,22035.17,23784.69,22976.51,22510.13,25714.91,26944.42,27163.54,28152.21,28643.55,29606.61,29783.01,31161.0,31718.85,32696.67,30954.5,33177.47,34512.84,35328.96,32433.15,31422.99,32126.08,28339.7,28727.72,25418.71,28657.0,26894.38,23772.62,25234.56,27650.71,25351.22,28085.27,27958.67,29903.31,29383.71,31786.59,33678.66,35040.42,34237.28,32061.37,31138.63,35093.67,37288.26,38502.42,41725.31,43258.0,41129.39,44713.15,47628.61,46641.57,46817.98,47519.38,47019.85,48992.29,48460.68,48905.18,47349.77,43437.86,43487.36,47910.35,52989.01,54757.72,55410.74,59868.61,64157.12,62402.66,62984.83,66424.65,66044.61,62663.06,63854.46],"spy":[10000.0,10170.12,10152.67,10522.95,10535.55,10483.21,10301.46,10680.95,10833.62,11027.48,11460.77,11425.39,11538.8,11701.64,11719.09,11959.97,11994.86,12176.13,12463.04,12843.99,12933.65,13662.58,13165.8,12753.84,12819.75,13131.39,13147.87,13634.95,14070.18,14090.05,13116.37,13359.67,12112.64,13082.44,13506.52,13690.69,14249.99,13341.25,14200.55,14415.26,14173.9,14383.27,14701.21,15233.36,15599.28,15592.98,14358.55,12492.12,14078.42,14749.19,14944.99,15825.13,16929.68,16230.8,15826.1,17547.62,18120.49,17935.83,18434.55,19208.55,20224.88,20357.68,20746.38,21252.85,21885.33,20798.72,22258.03,22079.19,23019.43,21805.36,21161.73,21889.21,19968.01,20013.09,18283.82,19967.53,19152.81,17311.1,18718.07,19758.64,18534.87,19700.48,19205.16,19841.52,20158.48,20251.54,21484.03,22187.27,21826.69,20718.27,20268.5,22119.91,23036.4,23403.29,24624.63,25351.14,24328.99,25559.54,26376.19,26695.58,27319.34,27807.88,27559.73,29203.22,28404.98,29167.84,28797.56,27111.42,26876.36,28565.4,29944.75,30634.42,31263.03,32287.11,33056.75,33121.21,33049.97,33537.05,33247.23,31519.41,31785.49],"blend_end":63854.46,"spy_end":31785.49,"blend_return":538.54,"spy_return":217.85},
+  "15y": {"dates":["2011-04","2011-05","2011-06","2011-07","2011-08","2011-09","2011-10","2011-11","2011-12","2012-01","2012-02","2012-03","2012-04","2012-05","2012-06","2012-07","2012-08","2012-09","2012-10","2012-11","2012-12","2013-01","2013-02","2013-03","2013-04","2013-05","2013-06","2013-07","2013-08","2013-09","2013-10","2013-11","2013-12","2014-01","2014-02","2014-03","2014-04","2014-05","2014-06","2014-07","2014-08","2014-09","2014-10","2014-11","2014-12","2015-01","2015-02","2015-03","2015-04","2015-05","2015-06","2015-07","2015-08","2015-09","2015-10","2015-11","2015-12","2016-01","2016-02","2016-03","2016-04","2016-05","2016-06","2016-07","2016-08","2016-09","2016-10","2016-11","2016-12","2017-01","2017-02","2017-03","2017-04","2017-05","2017-06","2017-07","2017-08","2017-09","2017-10","2017-11","2017-12","2018-01","2018-02","2018-03","2018-04","2018-05","2018-06","2018-07","2018-08","2018-09","2018-10","2018-11","2018-12","2019-01","2019-02","2019-03","2019-04","2019-05","2019-06","2019-07","2019-08","2019-09","2019-10","2019-11","2019-12","2020-01","2020-02","2020-03","2020-04","2020-05","2020-06","2020-07","2020-08","2020-09","2020-10","2020-11","2020-12","2021-01","2021-02","2021-03","2021-04","2021-05","2021-06","2021-07","2021-08","2021-09","2021-10","2021-11","2021-12","2022-01","2022-02","2022-03","2022-04","2022-05","2022-06","2022-07","2022-08","2022-09","2022-10","2022-11","2022-12","2023-01","2023-02","2023-03","2023-04","2023-05","2023-06","2023-07","2023-08","2023-09","2023-10","2023-11","2023-12","2024-01","2024-02","2024-03","2024-04","2024-05","2024-06","2024-07","2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04"],"blend":[10000.0,9852.73,9571.03,9336.97,8708.96,8183.93,9137.35,9012.95,8977.84,9583.94,10033.56,10374.09,10217.01,9452.72,9774.0,9836.14,10157.98,10226.06,9913.01,10048.97,10073.39,10546.83,10682.51,10988.38,11185.99,11527.39,11279.91,11848.51,11552.13,12039.94,12513.15,12817.86,13156.69,12772.22,13419.51,13525.73,13448.95,13816.74,14270.36,14090.99,14728.55,14440.58,14746.43,15365.0,15168.89,14702.22,15711.09,15380.24,15492.05,15940.17,15312.16,15412.89,14517.48,14175.04,15414.19,15599.56,15107.52,14208.87,14209.94,15292.9,15010.42,15605.5,15488.5,16479.35,16745.98,16993.51,16713.75,17269.45,17464.29,17981.28,18662.15,18903.98,19124.07,19795.01,19461.97,20080.72,20417.05,20902.04,21997.49,22302.56,22229.81,23732.34,23317.43,22699.65,22357.58,23648.46,23371.67,24089.45,25271.02,25094.13,22874.45,23168.59,20986.37,22845.69,24095.08,24630.4,26095.57,23643.21,25645.71,26469.51,25895.94,26380.8,27389.33,28611.51,29683.38,29818.73,27796.14,24415.49,27772.95,29502.86,31030.88,33087.05,35742.97,34505.68,33780.44,38558.42,40407.39,40709.64,42161.28,42892.35,44368.52,44607.4,46686.52,47544.26,49014.51,46397.78,49740.57,51685.97,52915.91,48601.3,47073.82,48144.71,42489.51,43020.84,38110.22,42951.63,40332.73,35659.26,37877.66,41427.15,37996.87,42058.18,41867.27,44780.2,44040.76,47593.63,50430.76,52448.61,51250.92,47996.55,46633.96,52543.46,55794.28,57573.64,62306.86,64544.95,61360.28,66663.14,71002.54,69577.83,69870.18,70932.94,70196.95,73219.77,72425.3,73071.12,70765.03,64914.99,65004.17,71584.2,79091.54,81738.97,82719.61,89300.32,95619.29,92969.01,93803.36,98716.95,98092.61,93097.32,94862.92],"spy":[10000.0,9887.85,9673.09,9479.59,8958.44,8293.63,9198.86,9161.47,9198.86,9625.45,10043.25,10321.04,10252.14,9636.44,9975.81,10093.82,10346.7,10552.66,10360.62,10419.26,10438.32,10972.66,11112.66,11483.54,11704.17,11980.5,11758.41,12366.05,11995.16,12314.74,12885.0,13266.88,13537.35,13060.18,13654.62,13707.4,13802.68,14122.99,14345.82,14153.05,14711.57,14441.11,14781.21,15187.28,15065.6,14619.22,15440.89,15130.84,15279.63,15476.07,15088.32,15429.16,14488.75,14046.03,15240.78,15296.49,14943.19,14199.22,14187.5,15064.14,15123.51,15380.78,15354.39,15914.39,15933.45,15854.28,15579.42,16153.34,16384.23,16677.42,17332.7,17279.19,17450.71,17696.99,17723.37,18087.66,18140.44,18414.57,18848.49,19424.61,19560.21,20662.61,19911.31,19288.28,19387.96,19859.27,19884.19,20620.83,21279.04,21309.1,19836.55,20204.5,18318.55,19785.24,20426.59,20705.12,21550.98,20176.65,21476.21,21800.92,21435.9,21752.55,22233.38,23038.19,23591.59,23582.06,21715.17,18892.47,21291.5,22305.94,22602.07,23933.15,25603.61,24546.65,23934.62,26538.15,27404.53,27125.27,27879.5,29050.06,30587.11,30787.95,31375.8,32141.76,33098.29,31454.96,33661.95,33391.48,34813.46,32977.35,32003.96,33104.16,30198.64,30266.8,27651.54,30197.9,28965.77,26180.46,28308.29,29881.99,28031.22,29794.03,29044.93,30007.33,30486.7,30627.43,32491.39,33554.94,33009.6,31333.28,30653.08,33453.05,34839.11,35393.97,37241.08,38339.81,36793.96,38654.99,39890.05,40373.09,41316.43,42055.27,41679.98,44165.51,42958.29,44112.0,43552.0,41001.98,40646.49,43200.91,45286.96,46329.99,47280.66,48829.44,49993.4,50090.89,49983.14,50719.78,50281.46,47668.4,48070.81],"blend_end":94862.92,"spy_end":48070.81,"blend_return":848.63,"spy_return":380.71},
+  "bear": [{"name":"GFC Recovery","drawdown":-56.8,"trough":"Feb 2009","peak":"Aug 2012","duration_months":28,"blend_exit":11959.21,"blend_return":19.59,"spy_exit":11881.15,"spy_return":18.81,"winner":"Blend","alpha":0.78,"dates":["2010-04","2010-05","2010-06","2010-07","2010-08","2010-09","2010-10","2010-11","2010-12","2011-01","2011-02","2011-03","2011-04","2011-05","2011-06","2011-07","2011-08","2011-09","2011-10","2011-11","2011-12","2012-01","2012-02","2012-03","2012-04","2012-05","2012-06","2012-07","2012-08"],"blend_series":[10000.0,9257.62,8688.59,9278.97,8664.64,9604.86,10096.26,10206.09,10787.57,11141.34,11525.74,11389.06,11798.98,11623.81,11286.88,11003.65,10259.25,9646.31,10769.9,10619.83,10577.92,11297.78,11823.95,12225.69,12036.95,11131.37,11510.27,11582.43,11959.21],"spy_series":[10000.0,9205.45,8687.82,9281.21,8863.73,9606.09,9973.07,9973.07,10584.13,10830.74,11206.97,11159.84,11483.04,11354.26,11107.65,10885.45,10287.01,9523.61,10563.08,10520.16,10563.08,11052.94,11532.7,11851.7,11772.58,11065.57,11455.26,11590.78,11881.15]},{"name":"2011 Debt Crisis","drawdown":-19.4,"trough":"Sep 2011","peak":"Feb 2012","duration_months":5,"blend_exit":12255.96,"blend_return":22.56,"spy_exit":12109.59,"spy_return":21.1,"winner":"Blend","alpha":1.46,"dates":["2011-09","2011-10","2011-11","2011-12","2012-01","2012-02"],"blend_series":[10000.0,11164.15,11010.8,10969.28,11711.98,12255.96],"spy_series":[10000.0,11091.47,11046.4,11091.47,11605.83,12109.59]},{"name":"Q4 2018 Correction","drawdown":-19.8,"trough":"Dec 2018","peak":"Apr 2019","duration_months":4,"blend_exit":12342.89,"blend_return":23.43,"spy_exit":11764.56,"spy_return":17.65,"winner":"Blend","alpha":5.78,"dates":["2018-12","2019-01","2019-02","2019-03","2019-04"],"blend_series":[10000.0,10883.04,11447.74,11679.29,12342.89],"spy_series":[10000.0,10800.66,11150.77,11302.82,11764.56]},{"name":"COVID Crash","drawdown":-33.9,"trough":"Mar 2020","peak":"Aug 2020","duration_months":5,"blend_exit":14429.61,"blend_return":44.3,"spy_exit":13552.28,"spy_return":35.52,"winner":"Blend","alpha":8.77,"dates":["2020-03","2020-04","2020-05","2020-06","2020-07","2020-08"],"blend_series":[10000.0,11360.53,12045.8,12575.49,13383.55,14429.61],"spy_series":[10000.0,11269.84,11806.79,11963.53,12668.09,13552.28]},{"name":"Fed Tightening 2022","drawdown":-25.4,"trough":"Sep 2022","peak":"Jan 2024","duration_months":16,"blend_exit":15384.44,"blend_return":53.84,"spy_exit":13519.23,"spy_return":35.19,"winner":"Blend","alpha":18.65,"dates":["2022-09","2022-10","2022-11","2022-12","2023-01","2023-02","2023-03","2023-04","2023-05","2023-06","2023-07","2023-08","2023-09","2023-10","2023-11","2023-12","2024-01"],"blend_series":[10000.0,10676.19,11544.01,10649.62,11676.32,11564.85,12233.59,12119.77,12858.52,13636.73,14167.79,13856.8,13016.74,12656.47,14159.44,14984.94,15384.44],"spy_series":[10000.0,10812.76,11413.85,10706.93,11380.26,11094.13,11461.73,11644.83,11698.58,12410.55,12816.79,12608.49,11968.2,11708.38,12777.87,13307.3,13519.23]}]
+};
+
+// ====================================================
+// CHART DEFAULTS
+// ====================================================
+Chart.defaults.color = '#8892a4';
+Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
+
+function dollarFmt(v) {
+  return '$' + v.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+}
+
+const BLEND_COLOR = '#4f9eff';
+const SPY_COLOR   = '#ff6b6b';
+const BLEND_FILL  = 'rgba(79,158,255,0.08)';
+const SPY_FILL    = 'rgba(255,107,107,0.06)';
+
+function chartOpts(extra={}) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a1f2e',
+        borderColor: '#252b3d',
+        borderWidth: 1,
+        padding: 12,
+        callbacks: {
+          label: function(ctx) {
+            return ' ' + ctx.dataset.label + ': ' + dollarFmt(ctx.parsed.y);
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+        ticks: { maxTicksLimit: 10, maxRotation: 0 }
+      },
+      y: {
+        grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+        ticks: {
+          callback: v => '$' + (v >= 1000 ? (v/1000).toFixed(0)+'K' : v)
+        }
+      }
+    },
+    ...extra
+  };
+}
+
+// ====================================================
+// BUILD 10Y CHART
+// ====================================================
+function build10y() {
+  const d = DATA['10y'];
+  const gap = d.blend.map((b,i) => b - d.spy[i]);
+
+  new Chart(document.getElementById('chart10y'), {
+    type:'line',
+    data: {
+      labels: d.dates,
+      datasets: [
+        {
+          label: 'Blend (VTI/VGT/SMH)',
+          data: d.blend,
+          borderColor: BLEND_COLOR,
+          backgroundColor: BLEND_FILL,
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+        },
+        {
+          label: 'SPY',
+          data: d.spy,
+          borderColor: SPY_COLOR,
+          backgroundColor: SPY_FILL,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+        }
+      ]
+    },
+    options: chartOpts()
+  });
+
+  new Chart(document.getElementById('chart10y_gap'), {
+    type:'bar',
+    data: {
+      labels: d.dates,
+      datasets: [{
+        label: 'Blend - SPY ($)',
+        data: gap,
+        backgroundColor: gap.map(v => v >= 0 ? 'rgba(0,229,160,0.5)' : 'rgba(255,107,107,0.5)'),
+        borderRadius: 2,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: {
+        backgroundColor:'#1a1f2e', borderColor:'#252b3d', borderWidth:1, padding:10,
+        callbacks: { label: ctx => ' Alpha: ' + dollarFmt(ctx.parsed.y) }
+      }},
+      scales: {
+        x: { grid:{color:'rgba(255,255,255,0.03)'}, ticks:{maxTicksLimit:8, maxRotation:0} },
+        y: { grid:{color:'rgba(255,255,255,0.03)'}, ticks:{callback: v => '$'+(v/1000).toFixed(0)+'K'} }
+      }
+    }
+  });
+}
+
+// ====================================================
+// BUILD 15Y CHART
+// ====================================================
+function build15y() {
+  const d = DATA['15y'];
+  const gap = d.blend.map((b,i) => b - d.spy[i]);
+
+  new Chart(document.getElementById('chart15y'), {
+    type:'line',
+    data: {
+      labels: d.dates,
+      datasets: [
+        {
+          label: 'Blend (VTI/VGT/SMH)',
+          data: d.blend,
+          borderColor: BLEND_COLOR,
+          backgroundColor: BLEND_FILL,
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+        },
+        {
+          label: 'SPY',
+          data: d.spy,
+          borderColor: SPY_COLOR,
+          backgroundColor: SPY_FILL,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+        }
+      ]
+    },
+    options: chartOpts()
+  });
+
+  new Chart(document.getElementById('chart15y_gap'), {
+    type:'bar',
+    data: {
+      labels: d.dates,
+      datasets: [{
+        label: 'Blend - SPY ($)',
+        data: gap,
+        backgroundColor: gap.map(v => v >= 0 ? 'rgba(0,229,160,0.5)' : 'rgba(255,107,107,0.4)'),
+        borderRadius: 2,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: { legend:{display:false}, tooltip:{
+        backgroundColor:'#1a1f2e', borderColor:'#252b3d', borderWidth:1, padding:10,
+        callbacks:{ label: ctx => ' Alpha: ' + dollarFmt(ctx.parsed.y) }
+      }},
+      scales: {
+        x: { grid:{color:'rgba(255,255,255,0.03)'}, ticks:{maxTicksLimit:10, maxRotation:0} },
+        y: { grid:{color:'rgba(255,255,255,0.03)'}, ticks:{callback: v => '$'+(v/1000).toFixed(0)+'K'} }
+      }
+    }
+  });
+}
+
+// ====================================================
+// BEAR MARKETS
+// ====================================================
+let bearChartInst = null;
+let activeBearIdx = 0;
+
+function buildBearTable() {
+  const tbody = document.getElementById('bear-table-body');
+  DATA.bear.forEach(b => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${b.name}</strong></td>
+      <td><span style="color:var(--spy-color);font-weight:700">${b.drawdown}%</span></td>
+      <td>${b.trough} → ${b.peak}</td>
+      <td>${b.duration_months} months</td>
+      <td class="td-blend">+${b.blend_return}%</td>
+      <td class="td-spy">+${b.spy_return}%</td>
+      <td class="td-green">+${b.alpha} pp</td>
+      <td><span class="winner-chip ${b.winner === 'Blend' ? 'blend' : 'spy'}">${b.winner}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function buildBearCards() {
+  const container = document.getElementById('bear-cards');
+  DATA.bear.forEach((b, i) => {
+    const card = document.createElement('div');
+    card.className = 'bear-card' + (i === 0 ? ' active' : '');
+    card.id = 'bear-card-' + i;
+    card.innerHTML = `
+      <div class="bear-head">
+        <div class="bear-name">${b.name}</div>
+        <div class="bear-dd">SPY −${Math.abs(b.drawdown)}%</div>
+      </div>
+      <div class="bear-stats">
+        <div class="bear-stat-row">
+          <span class="bear-stat-label">Blend Return</span>
+          <span class="bear-stat-val blend">+${b.blend_return}%</span>
+        </div>
+        <div class="bear-stat-row">
+          <span class="bear-stat-label">SPY Return</span>
+          <span class="bear-stat-val spy">+${b.spy_return}%</span>
+        </div>
+        <div class="bear-stat-row">
+          <span class="bear-stat-label">Alpha</span>
+          <span class="bear-stat-val green">+${b.alpha} pp</span>
+        </div>
+        <div class="bear-stat-row">
+          <span class="bear-stat-label">Winner</span>
+          <span class="winner-badge">✓ ${b.winner}</span>
+        </div>
+      </div>
+    `;
+    card.onclick = () => selectBear(i);
+    container.appendChild(card);
+  });
+}
+
+function buildBearBar() {
+  const labels = DATA.bear.map(b => b.name);
+  const blendReturns = DATA.bear.map(b => b.blend_return);
+  const spyReturns   = DATA.bear.map(b => b.spy_return);
+
+  new Chart(document.getElementById('bear-bar-chart'), {
+    type:'bar',
+    data: {
+      labels,
+      datasets: [
+        { label:'Blend', data:blendReturns, backgroundColor:'rgba(79,158,255,0.7)', borderRadius:6, borderSkipped:false },
+        { label:'SPY',   data:spyReturns,   backgroundColor:'rgba(255,107,107,0.6)', borderRadius:6, borderSkipped:false }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: { legend:{display:false}, tooltip:{
+        backgroundColor:'#1a1f2e', borderColor:'#252b3d', borderWidth:1, padding:10,
+        callbacks:{
+          label: ctx => ' ' + ctx.dataset.label + ': +' + ctx.parsed.y + '%'
+        }
+      }},
+      scales: {
+        x: { grid:{display:false} },
+        y: {
+          grid:{color:'rgba(255,255,255,0.04)'},
+          ticks:{callback: v => '+'+v+'%'}
+        }
+      }
+    }
+  });
+}
+
+function selectBear(i) {
+  activeBearIdx = i;
+  document.querySelectorAll('.bear-card').forEach((c,idx) => {
+    c.classList.toggle('active', idx === i);
+  });
+
+  const b = DATA.bear[i];
+  document.getElementById('bd-title').textContent = b.name + ' — ' + b.trough + ' → ' + b.peak;
+  document.getElementById('bd-sub').textContent = b.duration_months + '-month recovery window · $10,000 entry at trough · full exit at peak';
+
+  // KPI summary
+  const kpiDiv = document.getElementById('bd-kpis');
+  kpiDiv.innerHTML = `
+    <div class="bs-card">
+      <div class="bs-label">Blend End Value</div>
+      <div class="bs-val" style="color:var(--blend-color)">$${b.blend_exit.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+    </div>
+    <div class="bs-card">
+      <div class="bs-label">Blend Return</div>
+      <div class="bs-val" style="color:var(--blend-color)">+${b.blend_return}%</div>
+    </div>
+    <div class="bs-card">
+      <div class="bs-label">SPY Return</div>
+      <div class="bs-val" style="color:var(--spy-color)">+${b.spy_return}%</div>
+    </div>
+    <div class="bs-card">
+      <div class="bs-label">Alpha vs SPY</div>
+      <div class="bs-val" style="color:var(--green)">+${b.alpha} pp</div>
+    </div>
+  `;
+
+  // Destroy old chart
+  if (bearChartInst) { bearChartInst.destroy(); }
+
+  bearChartInst = new Chart(document.getElementById('bear-chart'), {
+    type:'line',
+    data: {
+      labels: b.dates,
+      datasets: [
+        {
+          label:'Blend (VTI/VGT/SMH)',
+          data: b.blend_series,
+          borderColor: BLEND_COLOR,
+          backgroundColor: BLEND_FILL,
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: BLEND_COLOR,
+        },
+        {
+          label:'SPY',
+          data: b.spy_series,
+          borderColor: SPY_COLOR,
+          backgroundColor: SPY_FILL,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: SPY_COLOR,
+        }
+      ]
+    },
+    options: chartOpts({
+      plugins: {
+        legend:{ display:false },
+        tooltip:{
+          backgroundColor:'#1a1f2e', borderColor:'#252b3d', borderWidth:1, padding:12,
+          callbacks:{
+            label: ctx => ' ' + ctx.dataset.label + ': ' + dollarFmt(ctx.parsed.y)
+          }
+        }
+      }
+    })
+  });
+}
+
+// ====================================================
+// TAB SWITCHING
+// ====================================================
+function switchTab(tabId) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ====================================================
+// INIT
+// ====================================================
+build10y();
+build15y();
+buildBearTable();
+buildBearCards();
+buildBearBar();
+selectBear(0);
+</script>
+</body>
+</html>
